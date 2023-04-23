@@ -1,0 +1,209 @@
+---
+title: "Teil 5"
+author: "Rebecca Karwen"
+subtitle: Classification
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r initdata, message=FALSE, warning=FALSE, include=FALSE}
+library("readr")
+library("dplyr")
+library("tidyr")
+library("knitr")
+library("ggplot2")
+library("psych")
+library("rpart")
+library("naivebayes")
+library("caret")
+library("rpart.plot")
+library("class")
+library("pROC")
+library("ROSE")
+
+```
+
+```{r Import data, message=FALSE, warning=FALSE, include=FALSE}
+
+stroke_data <- read_csv("05_Classification_stroke_data.csv",
+                   na = "N/A")
+
+#bestimmte Attribute als Faktor
+stroke_data$gender = factor(stroke_data$gender)
+stroke_data$work_type = factor(stroke_data$work_type)
+stroke_data$Residence_type= factor(stroke_data$Residence_type)
+stroke_data$smoking_status = factor(stroke_data$smoking_status )
+stroke_data$stroke = factor(stroke_data$stroke, levels = c(0,1), labels = c("No", "Yes"))
+
+
+str(stroke_data)
+
+```
+
+
+```{r, include=FALSE}
+
+colSums(is.na(stroke_data))
+
+smoking_na <- stroke_data %>%
+    filter(smoking_status == "Unknown") %>%
+    count(smoking_status)
+
+stroke_data <- stroke_data %>%
+  filter(bmi != is.na(bmi))
+
+```
+## 1. Traineren zwei beliebiger Classifier
+
+Dafür werden zunächst Test und Trainings Datensätze erstellt, mit denen daraufhin weitergearbeitet wird. 
+
+```{r traingsdaten}
+seed_val <- 45 # for reproducability
+set.seed(seed_val)
+
+#Split data in training and test
+sample_size = round(nrow(stroke_data)*.70) # setting sample size to 70% of the data set
+index <- sample(seq_len(nrow(stroke_data)), size = sample_size)
+
+train_x <- stroke_data[index, ]
+test_x <- stroke_data[-index, ]
+
+#Outcome in extra Vektor
+train_y <- train_x$stroke
+train_x$stroke = NULL
+test_y <- test_x$stroke
+test_x$stroke = NULL
+
+test_x$id = NULL
+train_x$id = NULL
+```
+\newpage
+### Erster Classifier Decision Tree
+
+Als ersten Classifier wird der Decision Tree gewählt, da dieser einer der einfacheren Methoden ist, der keine Probleme mit verschieden Datentypen hat und wenig Data Cleaning bedarf. Dabei prunen wir den Decision Tree ,damit er nicht weiter als 8 Ebenen geht. 
+Zuletzt schauen wir uns noch die Werte genauer an, zur späteren Evaluierung der Performance.
+
+```{r decision tree}
+tree <- rpart(train_y ~ .,data=train_x ,method = "class", parms=list(split="information"), control = rpart.control(cp = 0, maxdepth = 8))
+
+# Evaluate the performance
+pred_tree <- predict(tree, test_x,type="class")
+
+confusionMatrix(table(pred_tree, test_y), mode = "everything")
+```
+\newpage
+
+Nun wird der Decision Tree graphisch dargestellt, um einen besseren Überblick zu bekommen.
+
+
+```{r decision tree plot}
+#Plot the tree
+rpart.plot(tree)
+
+```
+
+\newpage
+### Zweiter Classifier - Naive Bayes
+
+Als zweiter Classifier wird Naive Bayes gewählt, weil dieser sehr schnell ist, andere Methoden übertreffen soll und auch mit kleinen Datasets einfach zu trainieren ist. Dabei wird auch wieder die Confusion Matrix erstellt - zu besseren Auswertung der Performance. 
+
+```{r}
+model_naive_bayes <- naive_bayes(train_y ~ ., data = train_x, laplace = T)
+pred_naive_bayes <- predict(model_naive_bayes, test_x)
+
+confusionMatrix(table(pred_naive_bayes, test_y), mode = "everything")
+
+```
+\newpage
+## 2. Evaluation der Performance
+
+Bei Naive Bayes ist in der Confusion Matrix sichtbar, dass 1264 der Vorhersagen für keinen Schlaganfall meist zutreffen. Es gibt 142 Werte des Error Typs I, d.h. jemand, der eigentlich keinen Schlaganfall hatte, wird als jemand, der einen Schlaganfall hatte, vorhergesagt. Andersherum gibt es 41 Personen, für die kein Schlaganfall ermittelt wurde, die aber einen hatten - also ein Type II Error.
+
+Beim weiteren Output der Confusion Matrix fällt die Specificity, also die Fähigkeit negative Werte zu bestimmen, auf, da diese nur 39 % beträgt, und die Negative Predictive Value (Neg Prev Value), da diese auch nur bei 15% liegt. Die Kappa Value ist mit 0.17 auch relativ niedrig mit. Die Kappa Statistik misst die Übereinstimmung mit dem, was zufällig erwartet wird. Ein Wert von 1 würde völlige Übereinstimmung bedeuten.
+
+Beim Decision Tree ist in der Confusion Matrix sichtbar, dass 1396 der Vorhersagen für keinen Schlaganfall meist zutreffen, es gibt 10 Werte des Error Typs I, d.h. jemand, der eigentlich keinen Schlaganfall hatte, wird als jemand, der einen Schlaganfall hatte, vorhergesagt. Andersherum gibt es 65 Personen für die kein Schlaganfall ermittelt wurde, die aber einen hatten, also ein Type II Error - welcher im Gegensatz zu Naive Bayer relativ hoch ist.
+
+Beim weiteren Output der Confusion Matrix fällt auch die Specificity auf, da diese nur 3 % beträgt und die Negative Predictive Value (Neg Prev Value), da diese auch nur bei 16% liegt. Die Kappa Value ist mit 0.04 auch relativ niedrig.
+
+Für diesen Datensatz würde ich Naive Bayes nutzen, da diese Methode nach der Auswertung die besseren Vorhersagen zu treffen scheint. Besonders, da es bei Krankheiten wichtiger ist, einen geringen Error des Typs II zu haben. 
+
+Eine weitere Untersuchung ergibt jedoch, dass die Daten sehr unbalanciert sind. Die folgende Tabelle zeigt, dass ohne ein Modell die Wahrscheinlichkeit mit 95% für keinen Schlaganfall vorhersagen würde, besser als beide Verfahren wäre.
+
+```{r}
+prop.table(table(stroke_data$stroke))
+
+glimpse(pred_naive_bayes)
+```
+\newpage
+## 3. Verbesserung der Performance der Classifier
+
+Um die Klasse besser zu balancieren, wird Oversampling angewendet. Dies bedeutet, dass Daten von unterrepräsentierten Klassen geklont werden.
+
+
+```{r}
+set.seed(2)
+
+oversampling_result <- ovun.sample(stroke ~ ., data = stroke_data, method = "both")
+oversampled_recession <- oversampling_result$data
+
+prop.table(table(oversampled_recession$stroke))
+```
+
+Nun ist die Verteilung fast gleich. Danach erstellen wir neue Test Datensätze.
+
+```{r traingsdaten neu}
+seed_val <- 45 # for reproducability
+set.seed(seed_val)
+
+#Splitt data in training and test
+sample_size_2 = round(nrow(oversampled_recession)*.70) # setting sample size to 70% of the data set
+index_2 <- sample(seq_len(nrow(oversampled_recession)), size = sample_size)
+
+train_x_2 <- oversampled_recession[index_2, ]
+test_x_2 <- oversampled_recession[-index_2, ]
+
+#Outcome in extra Vektor
+train_y_2 <- train_x_2$stroke
+train_x_2$stroke = NULL
+test_y_2 <- test_x_2$stroke
+test_x_2$stroke = NULL
+
+test_x_2$id = NULL
+train_x_2$id = NULL
+```
+\newpage
+Dann wird wieder zuerst der neue Entscheidungsbaum berechnet.
+
+```{r decision tree neu}
+tree_2 <- rpart(train_y_2 ~ .,data=train_x_2 ,method = "class", parms=list(split="information"), control = rpart.control(cp = 0, maxdepth = 8))
+
+# Evaluate the performance
+pred_tree_2 <- predict(tree_2, test_x_2,type="class")
+
+confusionMatrix(table(pred_tree_2, test_y_2), mode = "everything")
+```
+\newpage
+Danach wieder Naive Bayes angewandt mit den neuen Daten.
+
+```{r}
+model_naive_bayes_2 <- naive_bayes(train_y_2 ~ ., data = train_x_2, laplace = T)
+pred_naive_bayes_2 <- predict(model_naive_bayes_2, test_x_2)
+
+confusionMatrix(table(pred_naive_bayes_2, test_y_2), mode = "everything")
+
+```
+
+Generell haben sich einige oben beschriebenen Werte der Classifier nun verbessert. Bei Naive Bayes hat sich jedoch die Sensitivity verschlechtert, von 90 % auf 76 %, was bedeutet, dass das Modell nun weniger gut True Positive Werte erkennen kann - in unserem Fall also erkennt das Modell weniger gut jemand einen Schlaganfall hat. Die Specificity, die Fähigkeit negative Werte zu erfassen, ist dagegen besser geworden. Leider ist auch der Wert er Leute die laut Modell keinen Schlaganfall haben, im Modell jedoch auch gestiegen.
+
+Beim Entscheidungsbaum haben sich auch nur teilweise die Werte verbessert. Auch hier hat sie Sensitivity abgenommen, die Specificity ist aber wesentlich besser geworden und auch die Neg Pred Value ist jetzt besser. Generell hat sich aber  auch die Anzahl der Personen, die mit Ja für Schlaganfall erkannt werden, obwohl sie keinen bekommen, erhöht.
+
+Nach Auswertung der Modelle, würde die Entscheidung welches Modell gewählt wird, diesmal auf den Entscheidungsbaum fallen, da sich die Werte stärker verbesser haben und dort der Error Typ 2 am geringsten ist d.h. es werden weniger Leute die eigentlich einen Schlaganfall haben nicht erkannt.
+

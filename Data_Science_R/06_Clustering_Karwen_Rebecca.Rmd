@@ -1,0 +1,154 @@
+---
+title: "Teil 6"
+author: "Rebecca Karwen"
+subtitle: Cluserting
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r initdata, message=FALSE, warning=FALSE, include=FALSE}
+library("readr")
+library("dplyr")
+library("tidyr")
+library("knitr")
+library("ggplot2")
+library("purrr")
+library("cluster")
+library("dendextend")
+library("ggdendro")
+library("gplots")
+```
+
+
+## Vorbereitung
+
+Zuerst laden wir den Datensatz und erstellen danach jeweils einen Datensatz für hierarchisches Clustering und für die K-Means Methode. Dabei werden jeweils die Felder, welche die Fachabteilung als relevant eingestuft hat, ausgewählt.
+
+```{r Import data, message=FALSE, warning=FALSE, include=FALSE}
+
+house_data <- read_csv("06_Clustering-house_data.csv",
+                   na = "N/A")
+
+house_data_h <- house_data %>%
+  select(price, bedrooms, bathrooms, sqft_living, sqft_lot, floors, sqft_above, sqft_basement, yr_built)
+
+house_data_km <- house_data %>%
+  select(price, bedrooms, bathrooms, sqft_living, sqft_lot, floors, sqft_above, sqft_basement, yr_built)
+
+str(house_data)
+```
+
+Zuerst skalieren wir die Daten, damit, obwohl in den Datensätzen unterschiedliche Messgrößen vorliegen, die Ergebnisse verglichen werden können.
+
+
+```{r}
+scaled_house <- scale(house_data_km)
+scaled_house_2 <- scale(house_data_h)
+```
+## Hierarchisches Clustering
+Als nächstes nutzen wir hierarchisches Clustering für den Datensatz. Dazu berechnen wir zunächst die Euklidische Distanz und danach führen wir das Clustering durch. Wir nutzen dafür die "complete" Methode, dies nimmt die maximale Distanz. Auch lassen wir uns noch das Dendrogramm darstellen.
+
+```{r}
+my_dist <- dist(scaled_house_2, method = "euclidean")
+
+my_hclust <- hclust(my_dist, method = "complete")
+
+plot(my_hclust, hang = -1, cex = 0.6)
+
+```
+
+
+Danach nutzen wir cutree, um das Dendogramm ab Clustergröße von 6 zu schneiden, da, wie zuvor gesehen, dort die Zweige immer mehr auseinander gehen. Damit wären wir bei eine Clustergröße von 4, was mit den Ergebnissen des Elbowtestes am Anfang übereinstimmt. Zudem lassen wir es noch farbig darstellen, damit wir die Ergebnisse besser sehen können.
+
+```{r}
+cluster_k2 <- cutree(my_hclust, k = 6)
+
+
+dend_clust <- as.dendrogram(my_hclust)
+dend_colored <- color_branches(dend_clust, k = 6)
+
+# Plot the colored dendrogram
+plot(dend_colored)
+
+```
+
+
+Danach fügen wir die Cluster in den Orginaldatensatz ein und bestimmen den Durchschnittswert aller Cluster.
+
+```{r}
+
+k2_complete <- mutate(house_data_h, cluster = cluster_k2)
+count(k2_complete, cluster)
+
+
+k2_complete %>% 
+  group_by(cluster) %>% 
+  summarise_all(list(mean)) %>%
+  select(price, sqft_living, sqft_lot)
+```
+Wie sich zeigt, sind die Datensätze sehr schlecht in den Clustern verteilt, deswegen versuchen wir es nun als zweites mit der K-Means Methode.
+
+\newpage
+## K-Means
+
+Zunächst schauen wir uns den Elbow an, damit wir sehen können, wie viele Cluster wir brauchen. 
+
+```{r}
+tot_withinss <- map_dbl(1:15,  function(k){
+  model <- kmeans(x = scaled_house, centers = k)
+  model$tot.withinss
+})
+
+# Generate a data frame containing both k and tot_withinss
+elbow_df <- data.frame(
+  k = 1:15,
+  tot_withinss = tot_withinss
+)
+
+# Plot the elbow plot
+ggplot(elbow_df, aes(x = k, y = tot_withinss)) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:15)
+```
+Der Eblow ist bei 6 zu sehen, deswegen nutzen wir dies als Größe für unser k. 
+
+\newpage
+Nun verwenden wir K-Means und lassen uns danach eine Heatmap der Ergebnisse anzeigen
+
+```{r}
+my_km <- kmeans(scaled_house, centers = 6)
+
+clust_houses <- my_km$cluster
+
+
+heatmap.2(my_km$centers,scale = "column", trace = "none",  density.info = "none")
+```
+In der Heatmap lässt sich sehen, dass sich die Cluster generell nach der Größe ordnen. Meist sagt die Größe des Hauses ja auch etwas über die Anzahl an Stockwerken, Schlaf- und Badezimmern aus. Es lässt sich definitiv erkennen, dass Cluster 6 den höchsten Preis hat, Cluster 2 die geringste Fläche und Zimmer. Cluster 3 hat die kleinste Kellerfläche. Cluster 1 hat die ältesten Häuser - die von Cluster 4 und 6 sind dagegen neuer.
+
+\newpage
+
+Nun werden die entstandenen Cluster dem Orginaldatensatz hinzugefügt und die Durchschnittswerte von Preis, Wohnfläche und Grundstücksfläche in Tabellenform angezeigt.
+
+```{r}
+segment_houses <- mutate(house_data, cluster = clust_houses)
+
+count(segment_houses, cluster)
+
+segment_houses %>% 
+  group_by(cluster) %>% 
+  summarise_all(list(mean))  %>%
+  select(price, sqft_living, sqft_lot, cluster)
+```
+
+Es lässt sich sagen, dass die Gruppen unterschieden werden können. So ist z. B. 2 die Gruppe mit niedrigstem Preis aber auch kleinster Wohnfläche - trotzdem ist das Grundstück relativ groß. 
+Bei Cluster 6 haben wir den höchsten Preis, aber auch die meiste Wohnfläche. Cluster 5 ist auch eher teurer, aber hat dafür die meiste gesamte Grundstücksfläche. Bei Cluster 4 ist das Verhältnis von eigentlicher Wohnfläche zu Grundstücksfläche am geringsten. Cluster 3 hat noch etwas mehr Wohnfläche und hält sich sonst generell im mittleren Bereich.
+
+Bei der K-Means Methode erlangen wir besser verteilte Cluster. Somitwäre dieses Verfahren hier zu bevorzugen.

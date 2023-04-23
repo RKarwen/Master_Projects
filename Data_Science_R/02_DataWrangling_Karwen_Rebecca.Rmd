@@ -1,0 +1,274 @@
+---
+title: "Teil 2"
+author: "Rebecca Karwen"
+subtitle: Data Wrangling
+output: 
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r initdata, message=FALSE, warning=FALSE, include=FALSE}
+library("readr")
+library("dplyr")
+library("tidyr")
+library("knitr")
+
+category <- read_csv("category.csv",
+                     col_names = c("CategoryID", "CategoryName"))
+customer <- read_csv("customer.csv",
+                     col_names = c("CustomerID", "CustomerName", "CustomerZip"))
+product <- read_csv("product.csv",
+                    col_names = c("ProductID", "ProductName", "ProductPrice", "VendorID", "CategoryID"))
+region <- read_csv("region.csv",
+                   col_names = c("RegionID", "RegionName"))
+sales_transaction <- read_csv("salestransaction.csv",
+                              col_names = c("TID", "CustomerID", "StoreID", "TDate"),
+                              col_types = cols(TDate = col_date(format="%Y-%m-%d")))
+sold_via <- read_csv("soldvia.csv",
+                     col_names = c("ProductID", "TID", "NoOfItems"))
+store <- read_csv("store.csv",
+                  col_names = c("StoreID", "StoreZip", "RegionID"))
+vendor <- read_csv("vendor.csv",
+                   col_names = c("VendorID", "VendorName"))
+```
+\newpage
+
+## Aufgabe 1
+
+Schreiben Sie eine Query, um den CustomerName und den CustomerZip aller Kunden
+auszugeben.
+
+Zuerst wurde die Customer Tabelle ausgewählt, der Variable query_1 zugewiesen und danach durch die select Funktion die entsprechenden Spalten ausgewählt.
+
+```{r}
+query_1 <- customer %>%
+    select(CustomerName, CustomerZip)
+
+query_1
+
+```
+
+## Aufgabe 2
+
+Zeigen Sie die ProductID, den ProductName und den ProductPrice für diejenigen
+Produkte mit einem ProductPrice von $100 oder höher.
+
+
+Zunächst wurde durch die filter Funktion nach Reihen mit einem ProductPrice von über hundert gefiltert und dann durch select die entsprechenden Spalten ausgewählt.
+
+```{r}
+query_2 <- product %>%
+    filter(ProductPrice > 100) %>%
+    select(ProductID, ProductName, ProductPrice)
+query_2
+    
+```
+\newpage
+## Aufgabe 3
+
+Zeigen Sie die ProductID, den ProductName, den ProductPrice und den VendorName für
+alle Produkte. Sortieren Sie Ihre Ergebnisse anhand der ProductID.
+
+Zunächste wurden alle Produkte durch einen left_join mit der Vendor Tabelle verbunden. Left Join, da wir ja nur den Vendor für die Produkte brauchen, die in der Produkte Tabelle sind, und keine Vendors von denen keine Produkte in der Tabelle sind. Danach wurden durch select die entsprechenden Spalten ausgewählt und durch arrange anhand der ProductID sortiert.
+
+```{r}
+query_3 <- product %>%
+  left_join(vendor, by = "VendorID", suffix = c("VendorID", "VendorName")) %>%
+  select(ProductID, ProductName, ProductPrice, VendorName) %>%
+  arrange(ProductID)
+
+query_3  
+```
+\newpage
+## Aufgabe 4
+
+Zeigen Sie die ProductID, den ProductName, den ProductPrice, den VendorName und den
+CategoryName für alle Produkte. Sortieren Sie Ihre Ergebnisse anhand der ProductID.
+
+Zunächst wurden zwei left_joins angewendet, um die Tabellen Vendor und Category mit der Produkttabelle zu verbinden. Left_join, damit alle Produkte noch angezeigt werden - auch diese, die möglicherweise keinen Vendor oder keine Categorys haben.
+Danach werden die entsprechenden Spalten mit select ausgewählt und durch arrange nach der ProduktID sortiert.
+
+
+```{r}
+query_4 <- product %>%
+  left_join(vendor, by = "VendorID", suffix = c("VendorID", "VendorName")) %>%
+  left_join(category, by = c("CategoryID" = "CategoryID")) %>%
+  select(ProductID, ProductName, ProductPrice, VendorName, CategoryName) %>%
+  arrange(ProductID)
+
+query_4  
+```
+\newpage
+## Aufgabe 5
+
+Zeigen Sie die TID, den CustomerName, und das TDate für Verkaufstransaktionen mit einem
+Kunden, der ein Produkt mit dem ProductName Dura Boot am 2020-01-06 kauft.
+
+Zunächst wurde die Soldvia Tabelle mit der Product, SalesTransaction und customer Tabelle über einen inner_join verbunden. Inner_join, da nur die Zeilen der Tabellen gebraucht werden, die auch mit allen 4 verknüpfbar sind. Danach wird nach dem ProductName "Dura Boot" und dem TDate "2020-01-06" gefiltert. Zuletzt werden durch select noch die entsprechenden Spalten ausgewählt. Dadurch wird ersichtlich, dass der gesuchte Kunde Dan heißt.
+
+
+```{r}
+
+query_5 <- sold_via %>%
+  inner_join(product, by = "ProductID") %>%
+  inner_join(sales_transaction, by = "TID") %>%
+  inner_join(customer, by = "CustomerID") %>%
+    filter(ProductName == "Dura Boot",
+           TDate == "2020-01-06") %>%
+  select(TID, CustomerName, TDate)
+
+query_5
+```
+\newpage
+## Aufgabe 6
+
+Zeigen Sie für alle Regionen die RegionID, den RegionName und die Anzahl der Stores in der
+Region. Jede Region darf jedoch nur einmal genannt werden.
+
+Zunächst wird die Region durch einen left_join mit der Store Tabelle verbunden. Ein left_join, da nur die Stores benötigt werden, die auch einer RegionID aus der Region Tabelle zugeordnet werden können, und mögliche Regionen, die keinen Store haben, erhalten bleiben. Danach wird nach Region ID und Region Name gruppiert, damit dann durch die Count Funktion die Anzahl der Stores in der Regionen - also wie oft eine Region vorkommt - errechnet werden kann. Danach wird die entstandene Spalte n noch in anzahl_stores umbenannt, damit gleich der Inhalt zu erkennen ist.
+
+```{r}
+
+query_6 <- region %>%
+  left_join(store, by="RegionID") %>%
+  select(RegionID, RegionName) %>%
+  group_by(RegionID, RegionName) %>%
+  count(RegionID) %>%
+  rename(anzahl_stores = n)
+
+query_6
+```
+\newpage
+## Aufgabe 7
+
+Zeigen Sie für jede Produktkategorie die CategoryID, den CategoryName und den
+durchschnittlichen Preis eines Produkts in der Kategorie.
+
+Zunächst wurde wieder ein inner_join gemacht, damit alle CategoryNames mit allen Produkten verknüpft werden, die auch eine Category haben. Danach wird nach CategoryID und CategoryName gruppiert, damit diese im Ergebnis sichtbar sind. Anschließend wird durch die summarize Funktion eine neue Spalte mit dem durchschnittlichen ProductPrice erstellt.
+
+```{r}
+
+query_7 <- category %>%
+  inner_join(product, by="CategoryID") %>%
+  group_by(CategoryID, CategoryName) %>%
+  summarize(mean(ProductPrice))
+  
+
+query_7
+```
+\newpage
+## Aufgabe 8
+
+Zeigen Sie die TID für alle Verkaufstransaktionen an, für die die Gesamtzahl der verkauften
+Artikel (aller Produkte) innerhalb der Transaktion größer als fünf ist.
+
+Hierfür wird nur die solv_via Tabelle benötigt. Zunächst wird nach der TID gruppiert und mit der summarize Funktion die Summe der NoOfItems genommen. Danach wird durch die filter Funktion noch auf Artikel, deren Gesamtzahl an verkauften Produkten höher als 5 ist, beschränkt.
+```{r}
+
+query_8 <- sold_via %>%
+  group_by(TID) %>%
+  summarise(Summe = sum(NoOfItems)) %>%
+  filter(Summe > 5)
+  
+  
+
+query_8
+```
+
+\newpage
+## Aufgabe 9
+
+Zeigen Sie die ProductID und den ProductName des günstigsten Produktes.
+
+Es wird die filter() Funktion benutzt und innerhalb von ihr die min() Funktion, um das Produkt mit dem niedrigsten Preis auszuwählen. Danach werden durch select noch die benötigten Spalten ausgewählt.
+```{r}
+
+query_9 <- product %>%
+  filter(ProductPrice == min(ProductPrice)) %>%
+  select(ProductID, ProductName) 
+  
+  
+
+query_9
+```
+\newpage
+## Aufgabe 10
+
+Zeigen Sie die ProductID, den ProductName und den VendorName für Produkte, deren
+Preis niedriger als der durchschnittliche Preis aller Produkte ist.
+
+Zuerst wird die Product Tabelle durch einen left_join mit der Vendor Tabelle verbunden. Left_join, damit alle Produkte, auch diese welche möglicherweise keinen Vendor haben, in der Auswertung erscheinen. Danach werden alle Regionen, in denen der ProductPrice niedriger ist als der durchschnittliche ProductPrice, gefiltert. Dazu wird innerhalb der filter Funktion die mean() Funktion verwendet, um den durchschnittlichen ProductPrice zu errechnen und ihn danach mit dem ProductPrice des jeweiligen Produktes zu vergleichen. 
+Anschließend werden mithilfe select Funktion die entsprechenden Spalten ausgewählt. 
+
+```{r}
+
+
+query_10 <- product %>%
+  left_join(vendor, by = "VendorID") %>%
+  filter(ProductPrice < mean(ProductPrice)) %>%
+  select(ProductID, ProductName, VendorName)
+
+query_10
+```
+\newpage
+## Aufgabe 11
+
+Fügen Sie in der Tabelle Vendor die neue Spalte VendorStatus hinzu. Die Vendoren
+Mountain King, Outdoor Adventures und Wilderness Limited sollen dabei den Status
+solvent bekommen, während der Vendor Pacifica Gear den Status bankrupt innehaben
+soll.
+
+Durch die Verwendung der mutate Funktion wurde eine neue Spalte hinzugefügt und durch die Verwendung von case_when wurden die jeweiligen Werte den VendorNames angepasst.
+
+```{r}
+
+query_11 <- vendor %>%
+  mutate(VendorStatus = case_when(
+    VendorName == "Mountain King" ~ "solvent",
+    VendorName == "Outdoor Adventures" ~ "solvent",
+    VendorName == "Wilderness Limited" ~ "solvent",
+    VendorName == "Pacifica Gear" ~ "bankrupt"))
+
+query_11
+```
+\newpage
+## Aufgabe 12
+
+Fügen Sie nun das neue Produkt mit ProductID 10x10, ProductName Flashy Light,
+ProductPrice 50, VendorID OA und CategoryID CP hinzu.
+
+```{r}
+
+new_row <- 
+
+query_12 <- rbind(product,c("10x10","Flashy Light","50", "OA", "CP"))
+
+  
+
+query_12
+```
+\newpage
+## Aufgabe 13
+
+Fügen Sie nun der Tabelle Product die Spalte product_price_below_or_above_average
+hinzu, die -1 sein soll, für alle Produkte deren Preis kleiner als der durchschnittliche Preis über
+alle Produkte ist, 0, wenn der der durchschnittliche Preis dem Produktpreis entspricht und 1
+für alle Produkte, deren Preis größer als der durchschnittliche Preis über alle Produkte ist.
+
+Um eine neue Spalte zu der Product Tabelle hinzuzufügen, wurde die Funktion mutate verwendet und ebenfalls die case_when Funktion. Danach wurde, je nachdem ob der Produkt Price unter oder über dem Durchschnitt (mean) liegt, die -1 oder 1 in die jeweilige Spalte eingefügt.
+
+```{r}
+
+
+query_13 <- product %>%
+  mutate(product_price_below_or_above_average = case_when(
+    ProductPrice < mean(ProductPrice) ~ -1,
+    ProductPrice > mean(ProductPrice) ~ 1))
+  
+
+query_13
+```

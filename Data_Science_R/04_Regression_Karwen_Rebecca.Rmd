@@ -1,0 +1,183 @@
+---
+title: "Teil 4"
+author: "Rebecca Karwen"
+subtitle: Regression
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, tidy.opts=list(width.cutoff=80),tidy=TRUE)
+```
+
+```{r initdata, message=FALSE, warning=FALSE, include=FALSE}
+library("readr")
+library("dplyr")
+library("tidyr")
+library("knitr")
+library("ggplot2")
+library("psych")
+library("corrgram")
+library("broom")
+library("plotly")
+
+```
+
+
+
+```{r Import data, include = FALSE}
+
+haus_verkauf <- read_csv("04_Regression_house_data.csv",
+                              col_types = cols(date = col_date(format = "%Y%m%dT%H%M%S")), na = "NA")
+#bestimmte Attribute als Faktor
+haus_verkauf$grade = factor(haus_verkauf$grade,
+                               levels = c(1,2,3,4,5,6,7,8,9,10,11,12,13))
+haus_verkauf$condition = factor(haus_verkauf$condition,
+                                levels = c(1,2,3,4,5))
+
+str(haus_verkauf)
+
+colSums(is.na(haus_verkauf))
+
+```
+
+
+# Aufgabe 1
+
+Zunächst wird die Funktion corrgram() verwendet, um einen ersten Eindruck zu bekommen wie stark die Attribute mit dem Verkaufpreis korrelieren.
+
+```{r}
+corrgram(haus_verkauf[, c("price", "bedrooms", "bathrooms", "sqft_living", "sqft_lot", "floors",
+                          "waterfront", "view", "condition", "grade", "sqft_above", "sqft_basement",
+                          "yr_built", "yr_renovated", "zipcode" ,"lat", "long")])
+```
+\newpage
+
+Es scheint, dass der Verkaufspreis am stärksten mit der Größe der Wohnung und der Fläche eines Obergeschosses korreliert. Um dies noch einmal zu testen, wird pairs.panel() Funktion verwendet. Hinzu nehmen wir noch das Attribut grade, da es als Faktor nicht in der vorherigen Grafik erscheint. Hierdurch wird ersichtlich, dass mit der Wohnfläche die größte Korrelation besteht.
+
+
+```{r}
+pairs.panels(haus_verkauf[, c("price", "bathrooms", "sqft_living", "grade", "sqft_above")])
+```
+
+Nun berechnen wir die Korrelation zwischen price und sqft_living.
+
+```{r}
+cor.test(haus_verkauf$price, haus_verkauf$sqft_living)
+```
+Der Korrelationskoeffizient beträgt 0.70 und ist damit moderat positiv. Der P-Wert ist kleiner als 0.05, dadurch ist die Korrelation statistisch signifikant. Das heißt der Preis eines Hauses korreliert mit der Größe der Wohnfläche positiv, steigt also mit zunehmender Wohnfläche an.
+
+\newpage
+
+# Aufgabe 2
+
+Mit den Werten, mit denen der Preis am stärksten korreliert, erstellen wir ein multiples Regressionsmodell. Diese sind die Wohnfläche und grade, also die Bewertung des Hauses.
+
+```{r}
+relation <- lm(price ~ sqft_living  + grade , data = haus_verkauf)
+print(relation)
+
+```
+Für jeden Sqft Wohnfläche mehr, würde der Preis um 157 Dollar steigen. Für fast jede höhere Bewertungsstufe, würde der Preis steigen, nachdem nach der Wohnfläche kontrolliert wurde. Die einzige Bewertung, bei welcher der Preis sinken würde, ist grade 5 und zwar um 2541 Dollar. Am stärksten beeinflusst die Bewertung 13 den Preis - hier wäre der Preis um 2436095 Dollar höher.
+\newpage
+
+# Aufgabe 3
+
+Wir nutzen unser erstelltes Regressionsmodell um folgendes Haus zuschätzen.
+
+1) Anzahl der Schlafzimmer: 4
+2) Anzahl der Badezimmer: 3
+3) Wohnfläche in ft2: 1900
+4) Grundstücksfläche in ft2: 6000 
+5) Anzahl der Stockwerke: 2
+6) Lage an Wasser: 1
+7) Anzahl der Besichtigungen: 3 
+8) condition: 4
+9) Bewertung des Hauses: 9
+10) Obergeschossflächeinft2:1900 
+11) Kellerflächeinft2:0
+12) Baujahr: 2009
+13) Renovierungsjahr:/
+14) Postleitzahl:98038
+15) Breitengrad:47.380
+16) Längengrad:-122.020
+
+Zunächst erstellen wir einen Data Frame mit den Werten des Hauses, um dann die predict() Funktion zu verwenden, um durch unser Regressionmodell den Preis zu schätzen.
+
+```{r}
+house <- data.frame(bedrooms = c(4), bathrooms = c(3), sqft_living = c(1900), sqft_lot = c(6000), floors = c(2), waterfront = c(1), view = c(3), condition = c(4), grade = c("9"), sqft_above = c(1900), sqft_basement= c(0), yr_built=c(2009), yr_renovated = c(0), zipcode = c(98038), lat = c(47.380), long = c(-122.020))
+
+predict(relation, newdata = house)
+
+```
+
+Der geschätzte Preis beträgt 621218.20 Dollar.
+
+\newpage
+
+# Aufgabe 4
+
+Da eine starke Korrelation nicht immer etwas darüber aussagt ob sich diese Variablen wirklich stark beeinflussen, versuchen wir nun das Regressionsmodel zu verbessern.
+
+Zunächst verwenden wir die summary() Funktion, um mehr nützliche Informationen über unser Regressionmodell zu erhalten und danach berechnen wir die durchschnittlichen residuals.
+
+```{r}
+summary(relation)
+
+mean(residuals(relation))
+
+```
+Der P-Wert ist kleiner als 0.005 und damit statistisch signifikant. Der Wert von R^2 mit 59 % ist im Mittelfeld. Der Wert bedeutet, dass 58,2 % des Verkaufspreises durch die von uns gewählten Werte bestimmt wird. Der Residual Standard Error ist mir 234800 Dollar sehr hoch.
+\newpage
+Ein Visualisierung der Werte kann auch helfen einen besseren Überblick zu erhalten. Dafür wird ein Diagramm für die Wohnfläche mit Preis und gerade erstellt und noch ein weiteres für die Verteilung des Zipcodes.
+
+```{r,  warning=FALSE, message=FALSE, fig.height = 3, fig.width = 6, fig.align = "center"}
+augment_haus <- augment(relation)
+
+ggplot(augment_haus, aes(x=sqft_living, y=price, color = grade)) +
+  geom_point() +
+  geom_line(aes(y = .fitted))
+
+ggplot(haus_verkauf, aes(x=zipcode, y=price)) +
+  geom_point()
+```
+Es scheint das bis auf einige Ausläufer in unseren Daten die Postleitzahl, nicht zu sehr mit dem Preis zusammen hängt und es es bei den meisten eine Verteilung von Häusern in verschiedenen Preisklassen gibt.
+
+\newpage
+
+Eine Sache, bei der oft angenommen wird ist, dass sie den Preis beeinflusst, ist die Lage am Wasser. Dafür schauen wir uns den durchschnittlichen Verkaufspreises eines Hauses am Wasser und nicht am Wasser an - und stellen dabei fest, dass der durchschnittliche Wert mit Lage am Wasser höher ist. Da dies anscheinend eine Auswirkung hat, werden wir die Variable mit in unser Regressionmodell aufnehmen.
+
+Das gleiche machen wir auch mit dem Zipcode. Hier werden dabei aber nicht genug Anhaltspunkte gefunden, um die Variable mit in unser Modell zu nehmen.
+
+```{r}
+wasser <-  haus_verkauf %>%
+  group_by(waterfront) %>%
+  summarize(mean_price = mean(price))
+wasser
+
+zipcode <-  haus_verkauf %>%
+  group_by(zipcode) %>%
+  summarize(mean_price = mean(price)) %>%
+  arrange(desc(mean_price))
+zipcode
+
+```
+\newpage
+Nun versuchen wir mehr Variablen mit einzubinden, damit wir das Modell verbessern, indem wir Lage am Wasser und Interaktion zwischen Wohnfläche und Lage am Wasser hinzufügen.
+
+```{r}
+relation2 <- lm(price ~ sqft_living + grade +  waterfront + sqft_living:waterfront ,  data=haus_verkauf)
+
+summary(relation2)
+
+predict(relation2, newdata = house)
+
+```
+
+Das verbessert das Modell um einige Prozentpunkte für Mulitple R-squared und verringert den Residual standard error etwas.
+
+Der erwartete Wert des Hauses wäre dann 1 Millionen Dollar.
